@@ -26,18 +26,66 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 
   async create(createOrderDto: CreateOrderDto) {
 
-    const ids = [5,6];
-    const product = await firstValueFrom(
-      this.productsClient.send({ cmd: 'validate_product'}, ids)
-    ) 
-    return product;
-    /* return {
-      service: 'Orders Microservice',
-      createOrderDto: createOrderDto,
-    } */
-    /* return this.order.create({
-      data: createOrderDto
-    }); */
+    try {
+      const productIds = createOrderDto.items.map( item => item.productId );
+      
+      // 1- Confirmar los ids de los productos
+      const products = await firstValueFrom(
+        this.productsClient.send({ cmd: 'validate_product'}, productIds)
+      );
+      // 2-Calculos de los valores
+      const totalAmount =  createOrderDto.items.reduce( (acc, orderItems) => {
+        const price = products.find( product => product.id === orderItems.productId ).price;
+
+        return price * orderItems.quantity  
+      }, 0);
+
+      const totalItems = createOrderDto.items.reduce( (acc, orderItems) => {
+        return acc + orderItems.quantity;
+      }, 0);
+
+      // 3- Crear una transaccion de base de datos
+      const order = await this.order.create({
+        data:{
+          totalAmount: totalAmount,
+          totalItems: totalItems,
+          OrderItem:{
+            createMany:{
+              data: createOrderDto.items.map( ( orItem ) => ({
+                price: products.find( product => product.id === orItem.productId).price,
+                productId: orItem.productId,
+                quantity: orItem.quantity 
+              }))
+            }
+          }
+        },
+        include: {
+          OrderItem: {
+            select: {
+              price: true,
+              quantity: true,
+              productId: true,
+            }
+          }
+        }
+      });
+
+      return {
+        ...order,
+        OrderItem: order.OrderItem.map((orderItem) =>({
+          ...orderItem,
+          name: products.find( prod => prod.id === orderItem.productId).name,
+        }))
+      };
+      
+    } catch (error) {
+      throw new RpcException({ 
+        status: HttpStatus.BAD_REQUEST, 
+        message: `Check logs for the products request`
+      });
+    }
+
+  
     
   }
 
