@@ -8,6 +8,7 @@ import { ChangeOrderStatusDto } from './dto/change-order-status.dto';
 import { stat } from 'fs';
 import { PRODUCT_SERVICE } from 'src/config/services';
 import { firstValueFrom } from 'rxjs';
+import { OrderItem } from '../../generated/prisma/index';
 
 
 @Injectable()
@@ -114,14 +115,40 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   }
 
   async findOne(id: string) {
-    const order = await this.order.findUnique({where: { id } });
+    const order = await this.order.findUnique({
+      where: { id }, 
+      include:{
+        OrderItem: {
+          select:{
+            price: true,
+            quantity: true,
+            productId: true
+          }
+        }
+      }
+    });
+
     if( !order ){
       throw new RpcException({ 
         status: HttpStatus.NOT_FOUND, 
         message: `Order with id ${ id } not found`
       });
     }
-    return order;
+
+    const productIds = order.OrderItem.map( (orderItem) => orderItem.productId);
+    const products = await firstValueFrom(
+      this.productsClient.send({ cmd: 'validate_product'}, productIds)
+    );
+
+    return {
+      ...order,
+      OrderItem: order.OrderItem.map( orderItem => ({
+        ...orderItem,
+        name: products.find( product => product.id === orderItem.productId).name
+      }))
+    }
+
+
   }
 
   async changeStatus(changeOrderStatusDto: ChangeOrderStatusDto) {
