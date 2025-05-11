@@ -26,7 +26,6 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   }
 
   async create(createOrderDto: CreateOrderDto) {
-
     try {
       const productIds = createOrderDto.items.map( item => item.productId );
       
